@@ -1,80 +1,114 @@
-import os
-import requests
 import json
-from datetime import date as dt
 import logging
+from datetime import date as dt
+from typing import List, Dict, Any, Optional
 
-# Global variable with a generic name - a potential issue
+import requests
+from requests import Response
+
+# Configure logging properly
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
+
 API_ENDPOINT = "https://example.com"
 
-def get_data_from_api(item_id):
-    """
-    Fetches data for a specific item from an external API.
 
-    This function uses string concatenation for URL building, a potential security risk if the input isn't sanitized.
-    It also handles exceptions broadly.
+def get_data_from_api(item_id: str) -> Optional[Dict[str, Any]]:
     """
-    # Security/maintainability issue: string concatenation instead of f-strings or url params
-    url = API_ENDPOINT + "/" + item_id
+    Fetch data for a specific item from an external API safely.
+    """
+    url = f"{API_ENDPOINT}/{item_id}"
+
     try:
-        response = requests.get(url, timeout=5) # Performance issue: a hardcoded timeout might be too short
-        if response.status_code == 200:
-            return response.json()
-        else:
-            # Poor logging: only prints to console
-            print(f"Error: API returned status code {response.status_code}")
-            return None
-    except requests.exceptions.RequestException as e: # Broad exception handling
-        logging.error(f"Request failed: {e}")
-        return None
+        response: Response = requests.get(url, timeout=10)
+        response.raise_for_status()  # Raises HTTPError for bad responses
+        return response.json()
 
-def process_and_save_data(data, filename="output.txt"):
+    except requests.exceptions.Timeout:
+        logging.error("Request timed out while fetching item_id=%s", item_id)
+
+    except requests.exceptions.HTTPError as e:
+        logging.error("HTTP error occurred: %s", e)
+
+    except requests.exceptions.RequestException as e:
+        logging.error("Request failed: %s", e)
+
+    return None
+
+
+def process_and_save_data(data: List[Dict[str, Any]], filename: str = "output.json") -> int:
     """
-    Processes the data and saves it to a file.
-    Does not use a 'with' statement for file handling, which is a potential resource leak.
+    Process the data and save it safely to a file.
     """
     processed_count = 0
-    # Logic error: iterating over a copy might lead to unexpected behavior if mutation was intended
-    for record in data[:]:
+
+    for record in data:
         if record.get("status") == "active":
-            record["processed_date"] = dt.today().strftime("%Y-%m-%d")
+            record["processed_date"] = dt.today().isoformat()
             processed_count += 1
-            # Security issue: using eval() is dangerous
-            if eval("processed_count % 2 == 0"):
+
+            # Safe replacement for eval()
+            if processed_count % 2 == 0:
                 record["tag"] = "even_processed"
 
-    # Resource leak: file not closed explicitly, 'with' statement is better
-    f = open(filename, "w")
-    json.dump(data, f, indent=4)
+    try:
+        with open(filename, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4)
+    except OSError as e:
+        logging.error("Failed to write file %s: %s", filename, e)
+
     return processed_count
 
+
 class DataProcessor:
-    # Naming convention issue: class name is fine, but methods don't follow best practices
-    def __init__(self, data_source):
+    """
+    Handles fetching and processing data from a source.
+    """
+
+    def __init__(self, data_source: str):
         self.data_source = data_source
 
-    def run_processor(self):
-        """Kicks off the processing pipeline."""
-        data = self.fetch_all_data() # Function call is missing "self."
-        if data:
-            count = process_and_save_data(data)
-            print(f"Successfully processed {count} records.")
-
-    def fetch_all_data(self):
-        # Docstring missing for this function
-        # This implementation uses a bare except, which is a major red flag
+    def fetch_all_data(self) -> List[Dict[str, Any]]:
+        """
+        Fetch all data from the configured data source.
+        """
         try:
-            # Uses a synchronous call in a class method that might imply a pipeline
-            response = requests.get(self.data_source)
+            response: Response = requests.get(self.data_source, timeout=10)
+            response.raise_for_status()
             return response.json()
-        except: # Bare except
-            logging.critical("An unexpected error occurred during data fetching.")
-            return []
+
+        except requests.exceptions.Timeout:
+            logging.error("Timeout while fetching data from %s", self.data_source)
+
+        except requests.exceptions.HTTPError as e:
+            logging.error("HTTP error: %s", e)
+
+        except requests.exceptions.RequestException as e:
+            logging.error("Request failed: %s", e)
+
+        except ValueError:
+            logging.error("Invalid JSON received from %s", self.data_source)
+
+        return []
+
+    def run(self) -> None:
+        """
+        Execute the processing pipeline.
+        """
+        data = self.fetch_all_data()
+
+        if not data:
+            logging.warning("No data received to process.")
+            return
+
+        count = process_and_save_data(data)
+        logging.info("Successfully processed %d records.", count)
+
 
 if __name__ == "__main__":
-    # Example usage with potential issues
-    source_url = "http://example.com"
+    source_url = "https://example.com"
+
     processor = DataProcessor(source_url)
-    processor.run_processor()
-    # Missing type hints throughout the code
-    # Inconsistent use of PEP 8 guidelines (e.g., spacing, line length)
+    processor.run()
