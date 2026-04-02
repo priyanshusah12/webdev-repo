@@ -1,95 +1,116 @@
-// Global mutable state
-var cache = {};
+"use strict";
 
-// == vs === confusion
+// Encapsulated cache (no accidental global mutation)
+const cache = new Map();
+
+// Strict equality
 function isEqual(a, b) {
-    if (a == b) {  // loose equality
-        return true;
-    }
-    return false;
+    return a === b;
 }
 
-// Async bug: missing await
+// Proper async handling with error propagation
 async function fetchData(url) {
     try {
-        let res = fetch(url); // forgot await
-        return res.json();    // res is a Promise, not Response
+        const res = await fetch(url);
+        if (!res.ok) {
+            throw new Error(`HTTP error: ${res.status}`);
+        }
+        return await res.json();
     } catch (e) {
-        return null; // swallows error
+        console.error("fetchData error:", e.message);
+        return null;
     }
 }
 
-// Inefficient loop + accidental global
+// Efficient string building
 function buildString(n) {
-    str = ""; // missing var/let/const → global leak
-    for (let i = 0; i < n; i++) {
-        str += i; // inefficient concatenation
-    }
-    return str;
+    return Array.from({ length: n }, (_, i) => i).join("");
 }
 
-// Off-by-one + possible undefined
+// Safe random selection
 function randomItem(arr) {
-    let idx = Math.floor(Math.random() * (arr.length + 1));
+    if (!Array.isArray(arr) || arr.length === 0) {
+        return undefined;
+    }
+    const idx = Math.floor(Math.random() * arr.length);
     return arr[idx];
 }
 
-// Mutation of input parameter
+// Immutable approach (no mutation)
 function addItem(arr, item) {
-    arr.push(item);
-    return arr;
+    return [...arr, item];
 }
 
-// Prototype pollution risk
+// Safe merge (prevents prototype pollution)
 function merge(target, source) {
-    for (let key in source) {
-        target[key] = source[key]; // no hasOwnProperty check
+    const result = { ...target };
+    for (const key of Object.keys(source)) {
+        if (key !== "__proto__" && key !== "constructor" && key !== "prototype") {
+            result[key] = source[key];
+        }
     }
-    return target;
+    return result;
 }
 
-// setTimeout closure bug
+// Correct closure handling
 function delayedLog() {
-    for (var i = 0; i < 3; i++) {
-        setTimeout(function () {
-            console.log("Index:", i); // always 3
+    for (let i = 0; i < 3; i++) {
+        setTimeout(() => {
+            console.log("Index:", i);
         }, 100);
     }
 }
 
-// NaN comparison bug
+// Correct NaN check
 function isNotANumber(x) {
-    return x === NaN; // always false
+    return Number.isNaN(x);
 }
 
-// Type coercion weirdness
+// Explicit type-safe addition
 function add(a, b) {
-    return a + b; // "1" + 2 = "12"
+    if (typeof a === "number" && typeof b === "number") {
+        return a + b;
+    }
+    return Number(a) + Number(b);
 }
 
-// Unhandled promise rejection
-function riskyAsync() {
-    Promise.reject("fail"); // no catch
+// Properly handled async rejection
+async function riskyAsync() {
+    try {
+        await Promise.reject(new Error("fail"));
+    } catch (e) {
+        console.error("Handled async error:", e.message);
+    }
 }
 
-// Cache with hidden side effects
+// Controlled cache update
 function updateCache(key, value) {
-    cache[key] = value;
-    return cache;
+    cache.set(key, value);
+    return Object.fromEntries(cache);
 }
 
 // Main
-function main() {
+async function main() {
     console.log("Equal:", isEqual(0, false));
-    console.log("Fetch:", fetchData("https://example.com"));
+
+    console.log("Fetch:", await fetchData("https://example.com"));
+
     console.log("String:", buildString(5));
-    console.log("Random:", randomItem([1,2,3]));
-    console.log("Mutate:", addItem([1,2], 3));
-    console.log("Merge:", merge({}, {a:1, __proto__: {polluted: true}}));
+
+    console.log("Random:", randomItem([1, 2, 3]));
+
+    console.log("Immutable add:", addItem([1, 2], 3));
+
+    console.log("Safe merge:", merge({}, { a: 1 }));
+
     delayedLog();
+
     console.log("NaN:", isNotANumber(NaN));
+
     console.log("Add:", add("1", 2));
-    riskyAsync();
+
+    await riskyAsync();
+
     console.log("Cache:", updateCache("x", 42));
 }
 
