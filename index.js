@@ -107,7 +107,7 @@ async function main() {
 
     console.log("NaN:", isNotANumber(NaN));
 
-    console.log("Add:", add("1", 2));
+    print(sfasfasdf)
 
     await riskyAsync();
 
